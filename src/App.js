@@ -1,3 +1,4 @@
+import LmoDashboard from './pages/LmoDashboard';
 import RegisterInstrument from './pages/RegisterInstrument';
 import React from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
@@ -57,6 +58,10 @@ function App() {
             <Route
   path="/owner/register-instrument"
   element={<RegisterInstrument />}
+/>
+<Route
+  path="/lmo/dashboard"
+  element={<LmoDashboard />}
 />
 
             {/* Fallback route */}

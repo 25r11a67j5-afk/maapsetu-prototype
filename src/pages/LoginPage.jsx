@@ -62,7 +62,7 @@ export default function LoginPage() {
       } else if (profile.role === 'ADMIN') {
         navigate('/admin/dashboard');
       } else if (profile.role === 'LMO') {
-        navigate('/lmo/field-verification');
+  navigate('/lmo/dashboard');
       } else {
         throw new Error('Your account has an invalid role.');
       }
