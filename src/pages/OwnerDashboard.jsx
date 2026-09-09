@@ -235,6 +235,13 @@ export default function OwnerDashboard() {
             <Plus className="w-5 h-5" />
             <span>+ Apply for Verification</span>
           </Link>
+          <Link
+  to="/owner/register-instrument"
+  className="inline-flex items-center gap-2 px-5 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-sm rounded-xl transition-all"
+>
+  <span>Register Instrument</span>
+</Link>
+
 
         </div>
 

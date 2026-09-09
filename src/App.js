@@ -1,3 +1,4 @@
+import RegisterInstrument from './pages/RegisterInstrument';
 import React from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 
@@ -53,6 +54,10 @@ function App() {
 
             {/* Page 13: Public QR Verification (No Login Required) */}
             <Route path="/verify/:certId" element={<PublicVerification />} />
+            <Route
+  path="/owner/register-instrument"
+  element={<RegisterInstrument />}
+/>
 
             {/* Fallback route */}
             <Route path="*" element={<Navigate to="/" replace />} />
