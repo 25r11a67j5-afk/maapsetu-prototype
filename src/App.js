@@ -1,3 +1,4 @@
+import LmoInspection from './pages/LmoInspection';
 import LmoDashboard from './pages/LmoDashboard';
 import RegisterInstrument from './pages/RegisterInstrument';
 import React from 'react';
@@ -63,7 +64,10 @@ function App() {
   path="/lmo/dashboard"
   element={<LmoDashboard />}
 />
-
+<Route
+  path="/lmo/inspection/:assignmentId"
+  element={<LmoInspection />}
+/>
             {/* Fallback route */}
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
