@@ -13,6 +13,13 @@ import { supabase } from '../lib/supabaseClient';
 export default function AdminDashboard() {
   const [applications, setApplications] = useState([]);
   const [lmos, setLmos] = useState([]);
+  const [selectedReviewApp, setSelectedReviewApp] = useState(null);
+const [reviewInspection, setReviewInspection] = useState(null);
+const [reviewChecks, setReviewChecks] = useState([]);
+const [reviewMeasurements, setReviewMeasurements] = useState([]);
+const [showReviewModal, setShowReviewModal] = useState(false);
+const [reviewLoading, setReviewLoading] = useState(false);
+const [reviewActionLoading, setReviewActionLoading] = useState(false);
 
   const [selectedApp, setSelectedApp] = useState(null);
   const [selectedLmo, setSelectedLmo] = useState(null);
@@ -107,6 +114,207 @@ const loadLmos = async () => {
     );
 
     setLmos([]);
+  }
+};
+// ---------------------------------------
+// LOAD INSPECTION FOR ADMIN REVIEW
+// ---------------------------------------
+const handleOpenReview = async (application) => {
+  try {
+    setSelectedReviewApp(application);
+    setShowReviewModal(true);
+    setReviewLoading(true);
+
+    setReviewInspection(null);
+    setReviewChecks([]);
+    setReviewMeasurements([]);
+
+    // Load inspection
+    const { data: inspection, error: inspectionError } = await supabase
+      .from('inspections')
+      .select(`
+        id,
+        application_id,
+        lmo_id,
+        inspection_date,
+        status,
+        overall_result,
+        remarks,
+        created_at
+      `)
+      .eq('application_id', application.id)
+      .single();
+
+    if (inspectionError) {
+      throw inspectionError;
+    }
+
+    setReviewInspection(inspection);
+
+    // Load inspection checks
+    const { data: checks, error: checksError } = await supabase
+      .from('inspection_checks')
+      .select(`
+        id,
+        check_type,
+        result,
+        remarks
+      `)
+      .eq('inspection_id', inspection.id)
+      .order('created_at', { ascending: true });
+
+    if (checksError) {
+      throw checksError;
+    }
+
+    setReviewChecks(checks || []);
+
+    // Load measurements
+    const { data: measurements, error: measurementsError } =
+      await supabase
+        .from('measurements')
+        .select(`
+          id,
+          load_value,
+          observed_value,
+          tolerance,
+          result
+        `)
+        .eq('inspection_id', inspection.id)
+        .order('created_at', { ascending: true });
+
+    if (measurementsError) {
+      throw measurementsError;
+    }
+
+    setReviewMeasurements(measurements || []);
+
+  } catch (error) {
+    console.error('Inspection review loading error:', error);
+
+    setErrorMessage(
+      error.message || 'Unable to load inspection details.'
+    );
+
+    setShowReviewModal(false);
+
+  } finally {
+    setReviewLoading(false);
+  }
+};
+// ---------------------------------------
+// ADMIN APPROVE APPLICATION
+// ---------------------------------------
+const handleApproveApplication = async () => {
+  if (!selectedReviewApp || !reviewInspection) {
+    return;
+  }
+
+  try {
+    setReviewActionLoading(true);
+    setErrorMessage('');
+
+    // Update application
+    const { error: applicationError } = await supabase
+      .from('applications')
+      .update({
+        status: 'APPROVED'
+      })
+      .eq('id', selectedReviewApp.id);
+
+    if (applicationError) {
+      throw applicationError;
+    }
+
+    // Mark instrument as verified
+    const { error: instrumentError } = await supabase
+      .from('instruments')
+      .update({
+        status: 'VERIFIED'
+      })
+      .eq('id', selectedReviewApp.instrument_id);
+
+    if (instrumentError) {
+      throw instrumentError;
+    }
+
+    setShowReviewModal(false);
+
+    setAssignedSuccessToast(
+      `${selectedReviewApp.application_number} approved successfully.`
+    );
+
+    setTimeout(() => {
+      setAssignedSuccessToast(null);
+    }, 4000);
+
+    await loadApplications();
+
+  } catch (error) {
+    console.error('Approval error:', error);
+
+    setErrorMessage(
+      error.message || 'Unable to approve application.'
+    );
+
+  } finally {
+    setReviewActionLoading(false);
+  }
+};
+
+
+// ---------------------------------------
+// ADMIN REJECT APPLICATION
+// ---------------------------------------
+const handleRejectApplication = async () => {
+  if (!selectedReviewApp || !reviewInspection) {
+    return;
+  }
+
+  const confirmed = window.confirm(
+    `Are you sure you want to reject application ${selectedReviewApp.application_number}?`
+  );
+
+  if (!confirmed) {
+    return;
+  }
+
+  try {
+    setReviewActionLoading(true);
+    setErrorMessage('');
+
+    const { error: applicationError } = await supabase
+      .from('applications')
+      .update({
+        status: 'REJECTED'
+      })
+      .eq('id', selectedReviewApp.id);
+
+    if (applicationError) {
+      throw applicationError;
+    }
+
+    setShowReviewModal(false);
+
+    setAssignedSuccessToast(
+      `${selectedReviewApp.application_number} rejected.`
+    );
+
+    setTimeout(() => {
+      setAssignedSuccessToast(null);
+    }, 4000);
+
+    await loadApplications();
+
+  } catch (error) {
+    console.error('Rejection error:', error);
+
+    setErrorMessage(
+      error.message || 'Unable to reject application.'
+    );
+
+  } finally {
+    setReviewActionLoading(false);
   }
 };
   // ---------------------------------------
@@ -427,39 +635,47 @@ const loadLmos = async () => {
 
                       </td>
 
-                      {/* ACTION */}
-                      <td className="px-6 py-4 text-right">
+                    {/* ACTION */}
+<td className="px-6 py-4 text-right">
 
-                        {app.status === 'SUBMITTED' ? (
+  {app.status === 'SUBMITTED' ? (
 
-                          <button
-                            onClick={() =>
-                              handleOpenAssignModal(app)
-                            }
-                            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-accentBlue hover:bg-blue-600 text-white font-bold text-xs transition-all shadow-sm"
-                          >
-                            <UserCheck className="w-3.5 h-3.5" />
+    <button
+      onClick={() => handleOpenAssignModal(app)}
+      className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-accentBlue hover:bg-blue-600 text-white font-bold text-xs transition-all shadow-sm"
+    >
+      <UserCheck className="w-3.5 h-3.5" />
 
-                            <span>
-                              Assign
-                            </span>
+      <span>
+        Assign
+      </span>
+    </button>
 
-                          </button>
+  ) : app.status === 'UNDER_REVIEW' ? (
 
-                        ) : (
+    <button
+      onClick={() => handleOpenReview(app)}
+      className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs transition-all shadow-sm"
+    >
+      <ShieldCheck className="w-3.5 h-3.5" />
 
-                          <button
-                            onClick={() =>
-                              handleOpenAssignModal(app)
-                            }
-                            className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg border border-slate-300 hover:bg-slate-50 text-slate-700 font-medium text-xs transition-all"
-                          >
-                            Re-assign
-                          </button>
+      <span>
+        Review
+      </span>
+    </button>
 
-                        )}
+  ) : (
 
-                      </td>
+    <button
+      onClick={() => handleOpenAssignModal(app)}
+      className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg border border-slate-300 hover:bg-slate-50 text-slate-700 font-medium text-xs transition-all"
+    >
+      Re-assign
+    </button>
+
+  )}
+
+</td>
 
                     </tr>
 
@@ -639,7 +855,356 @@ const loadLmos = async () => {
         </div>
 
       )}
+      {/* REVIEW MODAL */}
+      {showReviewModal && (
 
+        <div className="fixed inset-0 z-50 bg-navy-950/70 backdrop-blur-sm flex items-center justify-center p-4">
+
+          <div className="bg-white rounded-2xl max-w-3xl w-full max-h-[90vh] overflow-y-auto shadow-2xl border border-slate-100">
+
+            {/* HEADER */}
+            <div className="sticky top-0 bg-white z-10 flex items-center justify-between p-6 border-b border-slate-100">
+
+              <div>
+                <h3 className="text-lg font-bold text-navy-900">
+                  Inspection Review
+                </h3>
+
+                <p className="text-xs text-slate-500 mt-1">
+                  Application:
+                  {' '}
+
+                  <span className="font-mono font-bold text-navy-900">
+                    {selectedReviewApp?.application_number}
+                  </span>
+                </p>
+              </div>
+
+              <button
+                onClick={() => setShowReviewModal(false)}
+                className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100"
+              >
+                <X className="w-5 h-5" />
+              </button>
+
+            </div>
+
+            {/* CONTENT */}
+            {reviewLoading ? (
+
+              <div className="p-10 text-center text-sm text-slate-500">
+                Loading inspection report...
+              </div>
+
+            ) : (
+
+              <div className="p-6 space-y-6">
+
+                {/* APPLICATION DETAILS */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+
+                  <div className="p-4 rounded-xl bg-slate-50 border border-slate-200">
+                    <div className="text-[11px] uppercase font-bold text-slate-400">
+                      Instrument
+                    </div>
+
+                    <div className="mt-1 font-bold text-navy-900">
+                      {selectedReviewApp?.instruments?.instrument_number || '—'}
+                    </div>
+
+                    <div className="text-xs text-slate-500">
+                      {selectedReviewApp?.instruments?.instrument_type || '—'}
+                    </div>
+                  </div>
+
+                  <div className="p-4 rounded-xl bg-slate-50 border border-slate-200">
+                    <div className="text-[11px] uppercase font-bold text-slate-400">
+                      Owner
+                    </div>
+
+                    <div className="mt-1 font-bold text-navy-900">
+                      {selectedReviewApp?.profiles?.full_name || '—'}
+                    </div>
+
+                    <div className="text-xs text-slate-500">
+                      {selectedReviewApp?.profiles?.email || '—'}
+                    </div>
+                  </div>
+
+                </div>
+
+                {/* INSPECTION RESULT */}
+                <div className="p-5 rounded-2xl border border-slate-200">
+
+                  <div className="flex items-center justify-between mb-4">
+
+                    <h4 className="font-bold text-navy-900">
+                      Inspection Result
+                    </h4>
+
+                    <span
+                      className={`px-3 py-1 rounded-full text-xs font-bold ${
+                        reviewInspection?.overall_result === 'PASS'
+                          ? 'bg-emerald-100 text-emerald-800'
+                          : reviewInspection?.overall_result === 'FAIL'
+                          ? 'bg-red-100 text-red-800'
+                          : 'bg-amber-100 text-amber-800'
+                      }`}
+                    >
+                      {reviewInspection?.overall_result || 'PENDING'}
+                    </span>
+
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
+
+                    <div>
+                      <span className="text-slate-400">
+                        Inspection Date:
+                      </span>
+
+                      <span className="ml-2 font-semibold text-slate-700">
+                        {reviewInspection?.inspection_date || '—'}
+                      </span>
+                    </div>
+
+                    <div>
+                      <span className="text-slate-400">
+                        Status:
+                      </span>
+
+                      <span className="ml-2 font-semibold text-slate-700">
+                        {reviewInspection?.status || '—'}
+                      </span>
+                    </div>
+
+                  </div>
+
+                  {reviewInspection?.remarks && (
+                    <div className="mt-4">
+
+                      <div className="text-[11px] uppercase font-bold text-slate-400 mb-1">
+                        LMO Remarks
+                      </div>
+
+                      <div className="p-3 rounded-lg bg-slate-50 text-sm text-slate-700">
+                        {reviewInspection.remarks}
+                      </div>
+
+                    </div>
+                  )}
+
+                </div>
+
+                {/* INSPECTION CHECKS */}
+                <div>
+
+                  <h4 className="font-bold text-navy-900 mb-3">
+                    Inspection Checks
+                  </h4>
+
+                  <div className="border border-slate-200 rounded-xl overflow-hidden">
+
+                    {reviewChecks.length === 0 ? (
+
+                      <div className="p-4 text-sm text-slate-400">
+                        No inspection checks recorded.
+                      </div>
+
+                    ) : (
+
+                      <div className="divide-y divide-slate-100">
+
+                        {reviewChecks.map((check) => (
+
+                          <div
+                            key={check.id}
+                            className="p-4 flex items-center justify-between gap-4"
+                          >
+
+                            <div>
+                              <div className="font-semibold text-sm text-slate-800">
+                                {check.check_type}
+                              </div>
+
+                              {check.remarks && (
+                                <div className="text-xs text-slate-400 mt-1">
+                                  {check.remarks}
+                                </div>
+                              )}
+                            </div>
+
+                            <span
+                              className={`px-2.5 py-1 rounded-full text-[11px] font-bold ${
+                                check.result === 'PASS'
+                                  ? 'bg-emerald-100 text-emerald-800'
+                                  : check.result === 'FAIL'
+                                  ? 'bg-red-100 text-red-800'
+                                  : 'bg-slate-100 text-slate-600'
+                              }`}
+                            >
+                              {check.result}
+                            </span>
+
+                          </div>
+
+                        ))}
+
+                      </div>
+
+                    )}
+
+                  </div>
+
+                </div>
+
+                {/* MEASUREMENTS */}
+                <div>
+
+                  <h4 className="font-bold text-navy-900 mb-3">
+                    Measurements
+                  </h4>
+
+                  <div className="border border-slate-200 rounded-xl overflow-hidden">
+
+                    {reviewMeasurements.length === 0 ? (
+
+                      <div className="p-4 text-sm text-slate-400">
+                        No measurements recorded.
+                      </div>
+
+                    ) : (
+
+                      <div className="overflow-x-auto">
+
+                        <table className="w-full text-sm">
+
+                          <thead className="bg-slate-50 text-xs text-slate-500 uppercase">
+
+                            <tr>
+                              <th className="px-4 py-3 text-left">
+                                Load
+                              </th>
+
+                              <th className="px-4 py-3 text-left">
+                                Observed
+                              </th>
+
+                              <th className="px-4 py-3 text-left">
+                                Tolerance
+                              </th>
+
+                              <th className="px-4 py-3 text-left">
+                                Result
+                              </th>
+                            </tr>
+
+                          </thead>
+
+                          <tbody className="divide-y divide-slate-100">
+
+                            {reviewMeasurements.map((measurement) => (
+
+                              <tr key={measurement.id}>
+
+                                <td className="px-4 py-3">
+                                  {measurement.load_value}
+                                </td>
+
+                                <td className="px-4 py-3">
+                                  {measurement.observed_value}
+                                </td>
+
+                                <td className="px-4 py-3">
+                                  {measurement.tolerance}
+                                </td>
+
+                                <td className="px-4 py-3">
+
+                                  <span
+                                    className={`px-2.5 py-1 rounded-full text-[11px] font-bold ${
+                                      measurement.result === 'PASS'
+                                        ? 'bg-emerald-100 text-emerald-800'
+                                        : measurement.result === 'FAIL'
+                                        ? 'bg-red-100 text-red-800'
+                                        : 'bg-slate-100 text-slate-600'
+                                    }`}
+                                  >
+                                    {measurement.result}
+                                  </span>
+
+                                </td>
+
+                              </tr>
+
+                            ))}
+
+                          </tbody>
+
+                        </table>
+
+                      </div>
+
+                    )}
+
+                  </div>
+
+                </div>
+
+              </div>
+
+            )}
+
+            {/* ACTION FOOTER */}
+            {!reviewLoading && reviewInspection && (
+
+              <div className="sticky bottom-0 bg-white border-t border-slate-100 p-5 flex flex-col sm:flex-row justify-end gap-3">
+
+                <button
+                  type="button"
+                  onClick={() => setShowReviewModal(false)}
+                  className="px-5 py-2.5 rounded-xl border border-slate-300 text-slate-700 text-xs font-semibold hover:bg-slate-50"
+                >
+                  Close
+                </button>
+
+                <button
+                  type="button"
+                  disabled={reviewActionLoading}
+                  onClick={handleRejectApplication}
+                  className="inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl bg-red-600 hover:bg-red-500 disabled:opacity-50 text-white text-xs font-bold"
+                >
+                  <X className="w-4 h-4" />
+
+                  {reviewActionLoading
+                    ? 'Processing...'
+                    : 'Reject Application'}
+                </button>
+
+                <button
+                  type="button"
+                  disabled={
+                    reviewActionLoading ||
+                    reviewInspection.overall_result !== 'PASS'
+                  }
+                  onClick={handleApproveApplication}
+                  className="inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white text-xs font-bold"
+                >
+                  <Check className="w-4 h-4" />
+
+                  {reviewActionLoading
+                    ? 'Processing...'
+                    : 'Approve Application'}
+                </button>
+
+              </div>
+            )}
+
+          </div>
+
+        </div>
+
+      )}
     </div>
   );
 }
