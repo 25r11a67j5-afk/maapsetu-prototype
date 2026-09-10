@@ -63,12 +63,21 @@ export default function ApplyWizard() {
         `)
         .eq('owner_id', user.id)
         .order('created_at', { ascending: false });
+        console.log("========== INSTRUMENT DEBUG ==========");
+console.log("Current user ID:", user.id);
+console.log("Instruments loaded:", data);
+console.log("Instrument query error:", error);
+console.log("======================================");
 
       if (error) {
         throw error;
       }
 
       setInstruments(data || []);
+      console.log("Current user ID:", user.id);
+console.log("Instruments loaded:", data);
+console.log("Instrument query error:", error);
+
 
       if (data && data.length > 0) {
         setSelectedInstrument(data[0].id);
@@ -83,6 +92,7 @@ export default function ApplyWizard() {
       setLoadingInstruments(false);
     }
   };
+
 
   const selectedInstrumentData = instruments.find(
     (instrument) => instrument.id === selectedInstrument
