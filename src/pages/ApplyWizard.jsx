@@ -32,9 +32,9 @@ export default function ApplyWizard() {
     loadInstruments();
   }, []);
 
-  const loadInstruments = async () => {
-  setLoading(true);
-  setError("");
+const loadInstruments = async () => {
+  setLoadingInstruments(true);
+  setErrorMessage('');
 
   try {
     const {
@@ -47,14 +47,14 @@ export default function ApplyWizard() {
     }
 
     if (!user) {
-      setError("Please log in again.");
+      setErrorMessage('Please log in again.');
       return;
     }
 
-    console.log("Application form user:", user.id);
+    console.log('Application form user:', user.id);
 
     const { data, error } = await supabase
-      .from("instruments")
+      .from('instruments')
       .select(`
         id,
         instrument_number,
@@ -69,28 +69,28 @@ export default function ApplyWizard() {
         status,
         created_at
       `)
-      .eq("owner_id", user.id)
-      .order("created_at", { ascending: false });
+      .eq('owner_id', user.id)
+      .order('created_at', { ascending: false });
 
     if (error) {
-      console.error("Instrument loading error:", error);
+      console.error('Instrument loading error:', error);
       throw error;
     }
 
-    console.log("Application form instruments:", data);
+    console.log('Application form instruments:', data);
 
     setInstruments(data || []);
 
     if (data && data.length > 0) {
       setSelectedInstrument(data[0].id);
     } else {
-      setSelectedInstrument("");
+      setSelectedInstrument('');
     }
   } catch (err) {
-    console.error("Failed to load instruments:", err);
-    setError(err.message || "Unable to load instruments.");
+    console.error('Failed to load instruments:', err);
+    setErrorMessage(err.message || 'Unable to load instruments.');
   } finally {
-    setLoading(false);
+    setLoadingInstruments(false);
   }
 };
 
