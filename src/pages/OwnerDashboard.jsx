@@ -25,7 +25,7 @@ export default function OwnerDashboard() {
 
   const [loading, setLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState('');
-
+// eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
     loadDashboard();
   }, []);

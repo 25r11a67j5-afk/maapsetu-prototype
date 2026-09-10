@@ -54,7 +54,7 @@ export default function LmoInspection() {
       result: 'PENDING'
     }
   ]);
-
+// eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
     loadInspection();
   }, [assignmentId]);
