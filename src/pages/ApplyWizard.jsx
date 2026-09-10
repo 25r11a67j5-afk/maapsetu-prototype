@@ -33,66 +33,66 @@ export default function ApplyWizard() {
   }, []);
 
   const loadInstruments = async () => {
-    try {
-      setLoadingInstruments(true);
-      setErrorMessage('');
+  setLoading(true);
+  setError("");
 
-      const {
-        data: { user },
-        error: userError
-      } = await supabase.auth.getUser();
+  try {
+    const {
+      data: { user },
+      error: userError,
+    } = await supabase.auth.getUser();
 
-      if (userError || !user) {
-        throw new Error('Please sign in again.');
-      }
-
-      const { data, error } = await supabase
-        .from('instruments')
-        .select(`
-          id,
-          instrument_number,
-          instrument_type,
-          manufacturer,
-          model,
-          serial_number,
-          capacity,
-          capacity_unit,
-          accuracy_class,
-          location,
-          status
-        `)
-        .eq('owner_id', user.id)
-        .order('created_at', { ascending: false });
-        console.log("========== INSTRUMENT DEBUG ==========");
-console.log("Current user ID:", user.id);
-console.log("Instruments loaded:", data);
-console.log("Instrument query error:", error);
-console.log("======================================");
-
-      if (error) {
-        throw error;
-      }
-
-      setInstruments(data || []);
-      console.log("Current user ID:", user.id);
-console.log("Instruments loaded:", data);
-console.log("Instrument query error:", error);
-
-
-      if (data && data.length > 0) {
-        setSelectedInstrument(data[0].id);
-      }
-
-    } catch (error) {
-      console.error('Error loading instruments:', error);
-      setErrorMessage(
-        error.message || 'Unable to load your registered instruments.'
-      );
-    } finally {
-      setLoadingInstruments(false);
+    if (userError) {
+      throw userError;
     }
-  };
 
+    if (!user) {
+      setError("Please log in again.");
+      return;
+    }
+
+    console.log("Application form user:", user.id);
+
+    const { data, error } = await supabase
+      .from("instruments")
+      .select(`
+        id,
+        instrument_number,
+        instrument_type,
+        manufacturer,
+        model,
+        serial_number,
+        capacity,
+        capacity_unit,
+        accuracy_class,
+        location,
+        status,
+        created_at
+      `)
+      .eq("owner_id", user.id)
+      .order("created_at", { ascending: false });
+
+    if (error) {
+      console.error("Instrument loading error:", error);
+      throw error;
+    }
+
+    console.log("Application form instruments:", data);
+
+    setInstruments(data || []);
+
+    if (data && data.length > 0) {
+      setSelectedInstrument(data[0].id);
+    } else {
+      setSelectedInstrument("");
+    }
+  } catch (err) {
+    console.error("Failed to load instruments:", err);
+    setError(err.message || "Unable to load instruments.");
+  } finally {
+    setLoading(false);
+  }
+};
 
   const selectedInstrumentData = instruments.find(
     (instrument) => instrument.id === selectedInstrument
