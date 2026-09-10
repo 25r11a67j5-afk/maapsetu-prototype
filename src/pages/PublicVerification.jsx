@@ -1,288 +1,353 @@
-import React, { useState } from 'react';
-import { useParams, Link } from 'react-router-dom';
-import { useAppStore } from '../store/appStore';
-import { 
-  CheckCircle2, 
-  ShieldCheck, 
-  Scale, 
-  AlertOctagon, 
-  FileText, 
-  Building2, 
-  X, 
-  Send,
-  Lock
+import React, { useEffect, useState } from 'react';
+import { useParams } from 'react-router-dom';
+import {
+  CheckCircle,
+  XCircle,
+  ShieldCheck,
+  Loader2
 } from 'lucide-react';
+import { supabase } from '../lib/supabaseClient';
 
-export default function PublicVerification() {
+const PublicVerification = () => {
   const { certId } = useParams();
-  const { getCertificateById, instrument } = useAppStore();
 
-  const cert = getCertificateById(certId || "LM-CERT-938274");
-  const [showReportModal, setShowReportModal] = useState(false);
-  const [reportSuccess, setReportSuccess] = useState(false);
-  const [reportText, setReportText] = useState('');
-  const [reportType, setReportType] = useState('Seal Tampering Suspected');
+  const [certificate, setCertificate] = useState(null);
+  const [instrument, setInstrument] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [errorMessage, setErrorMessage] = useState('');
 
-  const handleReportSubmit = (e) => {
-    e.preventDefault();
-    setReportSuccess(true);
-    setTimeout(() => {
-      setReportSuccess(false);
-      setShowReportModal(false);
-      setReportText('');
-    }, 2500);
+  useEffect(() => {
+    loadCertificate();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [certId]);
+
+  const loadCertificate = async () => {
+    try {
+      setLoading(true);
+      setErrorMessage('');
+
+      if (!certId) {
+        throw new Error('Certificate verification token is missing.');
+      }
+
+      // Find certificate using the public verification token
+      const {
+        data: certificateData,
+        error: certificateError
+      } = await supabase
+        .from('certificates')
+        .select(`
+          id,
+          certificate_number,
+          instrument_id,
+          inspection_id,
+          issued_date,
+          valid_until,
+          status,
+          verification_token
+        `)
+        .eq('verification_token', certId)
+        .maybeSingle();
+
+      if (certificateError) {
+        throw certificateError;
+      }
+
+      if (!certificateData) {
+        setErrorMessage(
+          'Certificate not found or the verification link is invalid.'
+        );
+        return;
+      }
+
+      setCertificate(certificateData);
+
+      // Get instrument details
+      const {
+        data: instrumentData,
+        error: instrumentError
+      } = await supabase
+        .from('instruments')
+        .select(`
+          id,
+          instrument_number,
+          instrument_type,
+          manufacturer,
+          model,
+          serial_number,
+          capacity,
+          capacity_unit,
+          accuracy_class,
+          location,
+          status
+        `)
+        .eq('id', certificateData.instrument_id)
+        .maybeSingle();
+
+      if (instrumentError) {
+        throw instrumentError;
+      }
+
+      setInstrument(instrumentData);
+
+    } catch (error) {
+      console.error('Certificate verification error:', error);
+
+      setErrorMessage(
+        error.message ||
+        'Unable to verify the certificate.'
+      );
+    } finally {
+      setLoading(false);
+    }
   };
 
+  const isValid =
+    certificate?.status === 'VALID' &&
+    certificate?.valid_until &&
+    new Date(certificate.valid_until) >= new Date();
+
+  if (loading) {
+    return (
+      <div style={styles.centerPage}>
+        <Loader2 size={40} className="spin" />
+        <p>Verifying certificate...</p>
+      </div>
+    );
+  }
+
+  if (errorMessage) {
+    return (
+      <div style={styles.centerPage}>
+        <div style={styles.errorCard}>
+          <XCircle size={60} />
+          <h1>Certificate Verification Failed</h1>
+          <p>{errorMessage}</p>
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <div className="min-h-[calc(100vh-4rem)] bg-neutralSlate pb-20">
-      {/* Navy Header */}
-      <div className="bg-navy-900 text-white border-b border-navy-800 py-6 px-4 sm:px-6 lg:px-8 shadow-sm">
-        <div className="max-w-4xl mx-auto flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-emerald-500 flex items-center justify-center text-navy-950 font-bold shadow-md">
-              <Scale className="w-6 h-6 text-white" />
-            </div>
-            <div>
-              <h1 className="text-xl sm:text-2xl font-black text-white tracking-wide">
-                MAAPSETU
-              </h1>
-              <p className="text-xs text-emerald-400 font-semibold">
-                Public Certificate Verification System
-              </p>
-            </div>
-          </div>
+    <div style={styles.page}>
+      <div style={styles.card}>
 
-          <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-xs font-bold">
-            <Lock className="w-3.5 h-3.5" />
-            <span className="hidden sm:inline">Citizen Portal • Open Access</span>
-          </div>
+        <div style={styles.header}>
+          <ShieldCheck size={48} />
+          <h1>MAAPSETU</h1>
+          <p>Digital Instrument Verification</p>
         </div>
-      </div>
 
-      <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 pt-8">
-        {/* Large Green Verification Section ("WOW" Banner) */}
-        <div className="bg-emerald-500/10 border-2 border-emerald-500 rounded-3xl p-8 sm:p-10 text-center mb-8 shadow-gov-lg animate-in fade-in zoom-in duration-200">
-          <div className="w-20 h-20 sm:w-24 sm:h-24 rounded-full bg-emerald-500 text-white flex items-center justify-center mx-auto mb-4 shadow-lg shadow-emerald-500/30 animate-bounce">
-            <CheckCircle2 className="w-12 h-12 sm:w-16 sm:h-16 text-white" />
+        <div
+          style={{
+            ...styles.statusBox,
+            ...(isValid
+              ? styles.validStatus
+              : styles.invalidStatus)
+          }}
+        >
+          {isValid ? (
+            <>
+              <CheckCircle size={36} />
+              <div>
+                <strong>CERTIFICATE VALID</strong>
+                <span>
+                  This certificate is currently valid.
+                </span>
+              </div>
+            </>
+          ) : (
+            <>
+              <XCircle size={36} />
+              <div>
+                <strong>CERTIFICATE INVALID / EXPIRED</strong>
+                <span>
+                  This certificate is no longer valid.
+                </span>
+              </div>
+            </>
+          )}
+        </div>
+
+        <div style={styles.section}>
+          <h2>Certificate Details</h2>
+
+          <Detail
+            label="Certificate Number"
+            value={certificate.certificate_number}
+          />
+
+          <Detail
+            label="Issue Date"
+            value={certificate.issued_date}
+          />
+
+          <Detail
+            label="Valid Until"
+            value={certificate.valid_until}
+          />
+
+          <Detail
+            label="Certificate Status"
+            value={certificate.status}
+          />
+        </div>
+
+        {instrument && (
+          <div style={styles.section}>
+            <h2>Instrument Details</h2>
+
+            <Detail
+              label="Instrument Number"
+              value={instrument.instrument_number}
+            />
+
+            <Detail
+              label="Instrument Type"
+              value={instrument.instrument_type}
+            />
+
+            <Detail
+              label="Manufacturer"
+              value={instrument.manufacturer}
+            />
+
+            <Detail
+              label="Model"
+              value={instrument.model}
+            />
+
+            <Detail
+              label="Serial Number"
+              value={instrument.serial_number}
+            />
+
+            <Detail
+              label="Capacity"
+              value={
+                instrument.capacity
+                  ? `${instrument.capacity} ${instrument.capacity_unit || ''}`
+                  : '—'
+              }
+            />
+
+            <Detail
+              label="Accuracy Class"
+              value={instrument.accuracy_class || '—'}
+            />
+
+            <Detail
+              label="Location"
+              value={instrument.location || '—'}
+            />
           </div>
+        )}
 
-          <h2 className="text-3xl sm:text-4xl md:text-5xl font-black text-emerald-600 tracking-tight mb-2">
-            ✓ AUTHENTIC & VALID
-          </h2>
-
-          <p className="text-base sm:text-lg font-semibold text-slate-700 max-w-md mx-auto">
-            This certificate has been verified against the National Legal Metrology Registry.
+        <div style={styles.footer}>
+          <p>
+            This certificate was issued through the
+            MAAPSETU digital verification system.
           </p>
 
-          <p className="text-xs text-slate-500 mt-2">
-            Cryptographic Signature: <span className="font-mono font-bold text-slate-700">VERIFIED-SHA256-OK</span>
+          <p>
+            Verification Token:
+            <br />
+            <code>{certificate.verification_token}</code>
           </p>
         </div>
 
-        {/* Three Status Cards (Horizontal layout, stack on mobile) */}
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-8">
-          <div className="bg-white rounded-2xl p-5 border-2 border-emerald-500/40 shadow-sm flex items-center gap-4">
-            <div className="w-12 h-12 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center shrink-0">
-              <ShieldCheck className="w-6 h-6 text-emerald-600" />
-            </div>
-            <div>
-              <span className="text-[11px] uppercase tracking-wider text-slate-400 font-bold block">
-                Certificate Status
-              </span>
-              <span className="text-base font-extrabold text-emerald-600">
-                ✓ ACTIVE
-              </span>
-            </div>
-          </div>
-
-          <div className="bg-white rounded-2xl p-5 border-2 border-emerald-500/40 shadow-sm flex items-center gap-4">
-            <div className="w-12 h-12 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center shrink-0">
-              <Scale className="w-6 h-6 text-emerald-600" />
-            </div>
-            <div>
-              <span className="text-[11px] uppercase tracking-wider text-slate-400 font-bold block">
-                Instrument Status
-              </span>
-              <span className="text-base font-extrabold text-emerald-600">
-                ✓ VERIFIED
-              </span>
-            </div>
-          </div>
-
-          <div className="bg-white rounded-2xl p-5 border-2 border-emerald-500/40 shadow-sm flex items-center gap-4">
-            <div className="w-12 h-12 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center shrink-0">
-              <CheckCircle2 className="w-6 h-6 text-emerald-600" />
-            </div>
-            <div>
-              <span className="text-[11px] uppercase tracking-wider text-slate-400 font-bold block">
-                Identity Match
-              </span>
-              <span className="text-base font-extrabold text-emerald-600">
-                ✓ CONFIRMED
-              </span>
-            </div>
-          </div>
-        </div>
-
-        {/* Instrument & Certificate Details Card */}
-        <div className="bg-white rounded-3xl shadow-sm border border-slate-200 p-6 sm:p-8 mb-8">
-          <h3 className="text-sm font-bold uppercase tracking-wider text-slate-400 pb-3 border-b border-slate-100 mb-4 flex items-center gap-2">
-            <Building2 className="w-4 h-4 text-emerald-600" />
-            <span>Verified Instrument Record Details</span>
-          </h3>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
-            <div className="p-3 bg-slate-50 rounded-xl border border-slate-100">
-              <span className="text-xs text-slate-500 block">Instrument Type</span>
-              <span className="font-bold text-navy-900 text-base">{instrument.type}</span>
-            </div>
-
-            <div className="p-3 bg-slate-50 rounded-xl border border-slate-100">
-              <span className="text-xs text-slate-500 block">Instrument ID</span>
-              <span className="font-mono font-bold text-navy-900 text-base">{instrument.id}</span>
-            </div>
-
-            <div className="p-3 bg-slate-50 rounded-xl border border-slate-100">
-              <span className="text-xs text-slate-500 block">Certificate Number</span>
-              <span className="font-mono font-bold text-emerald-600 text-base">{cert.id}</span>
-            </div>
-
-            <div className="p-3 bg-slate-50 rounded-xl border border-slate-100">
-              <span className="text-xs text-slate-500 block">Manufacturer</span>
-              <span className="font-bold text-navy-900 text-base">{instrument.manufacturer}</span>
-            </div>
-
-            <div className="p-3 bg-slate-50 rounded-xl border border-slate-100">
-              <span className="text-xs text-slate-500 block">Model & Serial</span>
-              <span className="font-mono font-bold text-navy-900 text-base">{instrument.model} • {instrument.serial}</span>
-            </div>
-
-            <div className="p-3 bg-slate-50 rounded-xl border border-slate-100">
-              <span className="text-xs text-slate-500 block">Capacity & Accuracy</span>
-              <span className="font-bold text-navy-900 text-base">{instrument.capacity} (Class {instrument.accuracyClass})</span>
-            </div>
-
-            <div className="p-3 bg-slate-50 rounded-xl border border-slate-100">
-              <span className="text-xs text-slate-500 block">Verification Date</span>
-              <span className="font-bold text-slate-800 text-base">{cert.issuedDate}</span>
-            </div>
-
-            <div className="p-3 bg-slate-50 rounded-xl border border-slate-100">
-              <span className="text-xs text-slate-500 block">Valid Until</span>
-              <span className="font-bold text-emerald-600 text-base">{cert.validUntil}</span>
-            </div>
-
-            <div className="p-3 bg-slate-50 rounded-xl border border-slate-100 sm:col-span-2">
-              <span className="text-xs text-slate-500 block">Issuing Authority</span>
-              <span className="font-bold text-navy-900 text-base">
-                Legal Metrology Department, Government of India (Officer {cert.verifiedBy})
-              </span>
-            </div>
-          </div>
-        </div>
-
-        {/* Action Buttons */}
-        <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
-          <Link
-            to={`/certificate/${cert.id}`}
-            className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-8 py-3.5 bg-accentBlue hover:bg-blue-600 text-white font-bold text-sm rounded-xl shadow-md shadow-blue-500/20 transition-all text-center"
-          >
-            <FileText className="w-4 h-4" />
-            <span>View Full Certificate</span>
-          </Link>
-
-          <button
-            type="button"
-            onClick={() => setShowReportModal(true)}
-            className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-6 py-3.5 bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-300 font-bold text-sm rounded-xl shadow-sm transition-all"
-          >
-            <AlertOctagon className="w-4 h-4 text-amber-600" />
-            <span>Report an Issue</span>
-          </button>
-        </div>
       </div>
-
-      {/* Report an Issue Modal */}
-      {showReportModal && (
-        <div className="fixed inset-0 z-50 bg-navy-950/70 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl max-w-md w-full p-6 sm:p-8 shadow-2xl border border-slate-100">
-            <div className="flex items-center justify-between pb-4 border-b border-slate-100">
-              <div className="flex items-center gap-2 text-amber-600">
-                <AlertOctagon className="w-5 h-5" />
-                <h3 className="text-lg font-bold text-navy-900">Report Inaccuracy / Issue</h3>
-              </div>
-              <button
-                onClick={() => setShowReportModal(false)}
-                className="p-1 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            {reportSuccess ? (
-              <div className="py-8 text-center space-y-3">
-                <div className="w-16 h-16 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center mx-auto">
-                  <CheckCircle2 className="w-10 h-10 text-emerald-600" />
-                </div>
-                <h4 className="text-lg font-bold text-navy-900">Complaint Registered!</h4>
-                <p className="text-xs text-slate-500">
-                  Reference: <span className="font-mono font-bold text-navy-900">CMP-2026-99214</span>.
-                  Dispatched to District Legal Metrology Inspector.
-                </p>
-              </div>
-            ) : (
-              <form onSubmit={handleReportSubmit} className="mt-5 space-y-4">
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 uppercase mb-1">
-                    Issue Category
-                  </label>
-                  <select
-                    value={reportType}
-                    onChange={(e) => setReportType(e.target.value)}
-                    className="w-full p-3 bg-slate-50 border border-slate-300 rounded-xl text-xs font-medium text-navy-900"
-                  >
-                    <option value="Seal Tampering Suspected">Broken or Tampered Security Seal</option>
-                    <option value="Inaccurate Weighing / Underweight">Inaccurate Weighing / Under-delivery</option>
-                    <option value="Display Malfunction">Display illegible or manipulated</option>
-                    <option value="Expired Stamping">Expired Verification Certificate</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 uppercase mb-1">
-                    Description & Location Details
-                  </label>
-                  <textarea
-                    rows={3}
-                    value={reportText}
-                    onChange={(e) => setReportText(e.target.value)}
-                    placeholder="Provide details (e.g., Shop name, observed weight difference, seal condition)..."
-                    className="w-full p-3 bg-slate-50 border border-slate-300 rounded-xl text-xs text-navy-900 focus:outline-none focus:ring-2 focus:ring-amber-500"
-                    required
-                  />
-                </div>
-
-                <div className="pt-2 flex items-center justify-end gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setShowReportModal(false)}
-                    className="px-4 py-2 border border-slate-300 rounded-xl text-xs font-semibold text-slate-600 hover:bg-slate-50"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="submit"
-                    className="inline-flex items-center gap-2 px-5 py-2 rounded-xl bg-amber-500 hover:bg-amber-600 text-navy-950 font-bold text-xs shadow-md"
-                  >
-                    <Send className="w-3.5 h-3.5" />
-                    <span>Submit Report</span>
-                  </button>
-                </div>
-              </form>
-            )}
-          </div>
-        </div>
-      )}
     </div>
   );
-}
+};
+
+const Detail = ({ label, value }) => (
+  <div style={styles.detailRow}>
+    <span>{label}</span>
+    <strong>{value || '—'}</strong>
+  </div>
+);
+
+const styles = {
+  page: {
+    minHeight: '100vh',
+    background: '#f4f7fb',
+    padding: '40px 20px',
+    boxSizing: 'border-box'
+  },
+
+  centerPage: {
+    minHeight: '100vh',
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    justifyContent: 'center',
+    background: '#f4f7fb',
+    gap: '12px'
+  },
+
+  card: {
+    maxWidth: '800px',
+    margin: '0 auto',
+    background: '#ffffff',
+    borderRadius: '16px',
+    padding: '32px',
+    boxShadow: '0 8px 30px rgba(0,0,0,0.08)'
+  },
+
+  header: {
+    textAlign: 'center',
+    marginBottom: '28px'
+  },
+
+  statusBox: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '16px',
+    padding: '20px',
+    borderRadius: '12px',
+    marginBottom: '28px'
+  },
+
+  validStatus: {
+    background: '#ecfdf5',
+    color: '#047857'
+  },
+
+  invalidStatus: {
+    background: '#fef2f2',
+    color: '#b91c1c'
+  },
+
+  section: {
+    marginBottom: '28px',
+    padding: '20px',
+    border: '1px solid #e5e7eb',
+    borderRadius: '12px'
+  },
+
+  detailRow: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    gap: '20px',
+    padding: '12px 0',
+    borderBottom: '1px solid #f1f5f9'
+  },
+
+  footer: {
+    textAlign: 'center',
+    color: '#64748b',
+    fontSize: '13px'
+  },
+
+  errorCard: {
+    background: '#ffffff',
+    padding: '40px',
+    borderRadius: '16px',
+    textAlign: 'center',
+    maxWidth: '500px',
+    boxShadow: '0 8px 30px rgba(0,0,0,0.08)'
+  }
+};
+
+export default PublicVerification;

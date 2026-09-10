@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
 import StatusBadge from '../components/StatusBadge';
 import {
   ShieldCheck,
@@ -11,8 +12,9 @@ import {
 import { supabase } from '../lib/supabaseClient';
 
 export default function AdminDashboard() {
-  const [applications, setApplications] = useState([]);
-  const [lmos, setLmos] = useState([]);
+const [applications, setApplications] = useState([]);
+const [lmos, setLmos] = useState([]);
+const [certificates, setCertificates] = useState([]);
   const [selectedReviewApp, setSelectedReviewApp] = useState(null);
 const [reviewInspection, setReviewInspection] = useState(null);
 const [reviewChecks, setReviewChecks] = useState([]);
@@ -20,7 +22,7 @@ const [reviewMeasurements, setReviewMeasurements] = useState([]);
 const [showReviewModal, setShowReviewModal] = useState(false);
 const [reviewLoading, setReviewLoading] = useState(false);
 const [reviewActionLoading, setReviewActionLoading] = useState(false);
-
+const [certificateValidUntil, setCertificateValidUntil] = useState('');
   const [selectedApp, setSelectedApp] = useState(null);
   const [selectedLmo, setSelectedLmo] = useState(null);
 
@@ -82,6 +84,39 @@ const [reviewActionLoading, setReviewActionLoading] = useState(false);
       setLoading(false);
     }
   };
+  // ---------------------------------------
+// LOAD CERTIFICATES
+// ---------------------------------------
+const loadCertificates = async () => {
+  try {
+    const { data, error } = await supabase
+      .from('certificates')
+      .select(`
+        id,
+        certificate_number,
+        instrument_id,
+        inspection_id,
+        issued_date,
+        valid_until,
+        status,
+        verification_token
+      `)
+      .order('created_at', { ascending: false });
+
+    if (error) {
+      throw error;
+    }
+
+    setCertificates(data || []);
+
+  } catch (error) {
+    console.error('Certificate loading error:', error);
+
+    setErrorMessage(
+      error.message || 'Unable to load certificates.'
+    );
+  }
+};
 
   // ---------------------------------------
   // LOAD LMO OFFICERS
@@ -121,6 +156,8 @@ const loadLmos = async () => {
 // ---------------------------------------
 const handleOpenReview = async (application) => {
   try {
+        setCertificateValidUntil('');
+
     setSelectedReviewApp(application);
     setShowReviewModal(true);
     setReviewLoading(true);
@@ -210,11 +247,18 @@ const handleApproveApplication = async () => {
     return;
   }
 
+  if (reviewInspection.overall_result !== 'PASS') {
+    setErrorMessage(
+      'Only inspections with a PASS result can be approved.'
+    );
+    return;
+  }
+
   try {
     setReviewActionLoading(true);
     setErrorMessage('');
 
-    // Update application
+    // Approve application
     const { error: applicationError } = await supabase
       .from('applications')
       .update({
@@ -249,6 +293,7 @@ const handleApproveApplication = async () => {
     }, 4000);
 
     await loadApplications();
+await loadCertificates();
 
   } catch (error) {
     console.error('Approval error:', error);
@@ -261,7 +306,150 @@ const handleApproveApplication = async () => {
     setReviewActionLoading(false);
   }
 };
+// ---------------------------------------
+// GENERATE CERTIFICATE
+// ---------------------------------------
+const handleGenerateCertificate = async () => {
+  if (!selectedReviewApp || !reviewInspection) {
+    return;
+  }
 
+  if (selectedReviewApp.status !== 'APPROVED') {
+    setErrorMessage(
+      'The application must be approved before generating a certificate.'
+    );
+    return;
+  }
+
+  if (!certificateValidUntil) {
+    setErrorMessage(
+      'Please select the certificate validity date.'
+    );
+    return;
+  }
+
+  try {
+    setReviewActionLoading(true);
+    setErrorMessage('');
+
+    // Get current admin user
+    const {
+      data: { user },
+      error: userError
+    } = await supabase.auth.getUser();
+
+    if (userError || !user) {
+      throw new Error(
+        'Your admin session has expired. Please sign in again.'
+      );
+    }
+
+    // Check if certificate already exists
+    const {
+      data: existingCertificate,
+      error: existingError
+    } = await supabase
+      .from('certificates')
+      .select(`
+        id,
+        certificate_number,
+        issued_date,
+        valid_until,
+        status,
+        verification_token
+      `)
+      .eq('inspection_id', reviewInspection.id)
+      .maybeSingle();
+
+    if (existingError) {
+      throw existingError;
+    }
+
+    // If certificate already exists, do not create another one
+    if (existingCertificate) {
+      setErrorMessage(
+        `Certificate ${existingCertificate.certificate_number} already exists.`
+      );
+
+      return;
+    }
+
+    // Generate certificate number
+    const year = new Date().getFullYear();
+
+    const certificateNumber =
+      `CERT-${year}-${Date.now().toString().slice(-8)}`;
+
+    // Generate public verification token
+    const verificationToken = crypto.randomUUID();
+
+    // Create certificate
+    const {
+      data: newCertificate,
+      error: certificateError
+    } = await supabase
+      .from('certificates')
+      .insert({
+        certificate_number: certificateNumber,
+        instrument_id: selectedReviewApp.instrument_id,
+        inspection_id: reviewInspection.id,
+        issued_by: user.id,
+        issued_date: new Date().toISOString().split('T')[0],
+        valid_until: certificateValidUntil,
+        status: 'VALID',
+        verification_token: verificationToken
+      })
+      .select()
+      .single();
+
+    if (certificateError) {
+      throw certificateError;
+    }
+
+    // Update application status
+    const {
+      error: applicationError
+    } = await supabase
+      .from('applications')
+      .update({
+        status: 'CERTIFICATE_ISSUED'
+      })
+      .eq('id', selectedReviewApp.id);
+
+    if (applicationError) {
+      throw applicationError;
+    }
+
+    // Close review modal
+    setShowReviewModal(false);
+
+    // Success message
+    setAssignedSuccessToast(
+      `Certificate ${newCertificate.certificate_number} generated successfully.`
+    );
+
+    setTimeout(() => {
+      setAssignedSuccessToast(null);
+    }, 5000);
+
+    // Reload applications
+    await loadApplications();
+
+  } catch (error) {
+    console.error(
+      'Certificate generation error:',
+      error
+    );
+
+    setErrorMessage(
+      error.message ||
+      'Unable to generate certificate.'
+    );
+
+  } finally {
+    setReviewActionLoading(false);
+  }
+};
 
 // ---------------------------------------
 // ADMIN REJECT APPLICATION
@@ -321,9 +509,10 @@ const handleRejectApplication = async () => {
   // LOAD DATA WHEN DASHBOARD OPENS
   // ---------------------------------------
   useEffect(() => {
-    loadApplications();
-    loadLmos();
-  }, []);
+  loadApplications();
+  loadLmos();
+  loadCertificates();
+}, []);
   // ---------------------------------------
   // OPEN ASSIGN MODAL
   // ---------------------------------------
@@ -449,16 +638,17 @@ const handleRejectApplication = async () => {
               Live Database
             </span>
 
-            <button
-              onClick={() => {
-                loadApplications();
-                loadLmos();
-              }}
-              className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-navy-800 hover:bg-navy-700 border border-navy-700 text-xs font-semibold"
-            >
-              <RefreshCw className="w-3.5 h-3.5" />
-              Refresh
-            </button>
+           <button
+  onClick={() => {
+    loadApplications();
+    loadLmos();
+    loadCertificates();
+  }}
+  className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-navy-800 hover:bg-navy-700 border border-navy-700 text-xs font-semibold"
+>
+  <RefreshCw className="w-3.5 h-3.5" />
+  Refresh
+</button>
           </div>
 
         </div>
@@ -645,10 +835,7 @@ const handleRejectApplication = async () => {
       className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-accentBlue hover:bg-blue-600 text-white font-bold text-xs transition-all shadow-sm"
     >
       <UserCheck className="w-3.5 h-3.5" />
-
-      <span>
-        Assign
-      </span>
+      <span>Assign</span>
     </button>
 
   ) : app.status === 'UNDER_REVIEW' ? (
@@ -658,11 +845,55 @@ const handleRejectApplication = async () => {
       className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs transition-all shadow-sm"
     >
       <ShieldCheck className="w-3.5 h-3.5" />
-
-      <span>
-        Review
-      </span>
+      <span>Review</span>
     </button>
+) : app.status === 'APPROVED' ? (
+
+  (() => {
+    const certificate = certificates.find(
+      (cert) => cert.instrument_id === app.instrument_id
+    );
+
+    return certificate ? (
+      <Link
+        to={`/certificate/${certificate.id}`}
+        className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs transition-all shadow-sm"
+      >
+        <ShieldCheck className="w-3.5 h-3.5" />
+        <span>View Certificate</span>
+      </Link>
+    ) : (
+      <button
+        onClick={() => handleOpenReview(app)}
+        className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs transition-all shadow-sm"
+      >
+        <ShieldCheck className="w-3.5 h-3.5" />
+        <span>Generate Certificate</span>
+      </button>
+    );
+  })()
+
+ ) : app.status === 'CERTIFICATE_ISSUED' ? (
+
+  (() => {
+    const certificate = certificates.find(
+      (cert) => cert.instrument_id === app.instrument_id
+    );
+
+    return certificate ? (
+      <Link
+        to={`/certificate/${certificate.id}`}
+        className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-xs transition-all shadow-sm"
+      >
+        <ShieldCheck className="w-3.5 h-3.5" />
+        View Certificate
+      </Link>
+    ) : (
+      <span className="text-xs text-amber-600 font-semibold">
+        Certificate loading...
+      </span>
+    );
+  })()
 
   ) : (
 
@@ -676,6 +907,7 @@ const handleRejectApplication = async () => {
   )}
 
 </td>
+
 
                     </tr>
 
@@ -1154,6 +1386,36 @@ const handleRejectApplication = async () => {
               </div>
 
             )}
+            {/* CERTIFICATE VALIDITY */}
+<div className="p-5 rounded-2xl border border-emerald-200 bg-emerald-50">
+
+  <h4 className="font-bold text-navy-900">
+    Certificate Validity
+  </h4>
+
+  <p className="text-xs text-slate-500 mt-1">
+    Select the date until which the certificate should remain valid.
+  </p>
+
+  <div className="mt-4 max-w-xs">
+
+    <label className="block text-xs font-semibold text-slate-600 mb-1.5">
+      Valid Until
+    </label>
+
+    <input
+      type="date"
+      value={certificateValidUntil}
+      min={new Date().toISOString().split('T')[0]}
+      onChange={(e) =>
+        setCertificateValidUntil(e.target.value)
+      }
+      className="w-full px-3 py-2.5 rounded-xl border border-slate-300 bg-white text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+    />
+
+  </div>
+
+</div>
 
             {/* ACTION FOOTER */}
             {!reviewLoading && reviewInspection && (
@@ -1169,17 +1431,17 @@ const handleRejectApplication = async () => {
                 </button>
 
                 <button
-                  type="button"
-                  disabled={reviewActionLoading}
-                  onClick={handleRejectApplication}
-                  className="inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl bg-red-600 hover:bg-red-500 disabled:opacity-50 text-white text-xs font-bold"
-                >
-                  <X className="w-4 h-4" />
+  type="button"
+  disabled={reviewActionLoading}
+  onClick={handleRejectApplication}
+  className="inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl bg-red-600 hover:bg-red-500 disabled:opacity-50 text-white text-xs font-bold"
+>
+  <X className="w-4 h-4" />
 
-                  {reviewActionLoading
-                    ? 'Processing...'
-                    : 'Reject Application'}
-                </button>
+  {reviewActionLoading
+    ? 'Processing...'
+    : 'Reject Application'}
+</button>
 
                 <button
                   type="button"
@@ -1196,6 +1458,20 @@ const handleRejectApplication = async () => {
                     ? 'Processing...'
                     : 'Approve Application'}
                 </button>
+                {selectedReviewApp?.status === 'APPROVED' && (
+  <button
+    type="button"
+    disabled={reviewActionLoading}
+    onClick={handleGenerateCertificate}
+    className="inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white text-xs font-bold"
+  >
+    <ShieldCheck className="w-4 h-4" />
+
+    {reviewActionLoading
+      ? 'Generating...'
+      : 'Generate Certificate'}
+  </button>
+)}
 
               </div>
             )}
